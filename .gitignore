@@ -1,0 +1,10 @@
+# Images telechargees
+pokemon_images/
+
+# Documents
+*.docx
+*.pdf
+
+# Python
+__pycache__/
+*.pyc

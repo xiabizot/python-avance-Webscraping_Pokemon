@@ -1,0 +1,14 @@
+# requirements.txt pour le projet de Web Scraping Pokémon (DU Sorbonne Data Analytics)
+# Date: Octobre 2025
+
+# --- Web Scraping et Analyse HTML ---
+requests                  # Pour effectuer les requêtes HTTP (requests.get)
+beautifulsoup4            # Pour analyser le HTML et extraire les données (BeautifulSoup)
+lxml                      # Le parser rapide recommandé pour BeautifulSoup
+
+# --- Manipulation de Données ---
+pandas                    # Pour la création et la gestion du DataFrame (pd.DataFrame)
+
+# --- Traitement et Affichage des Images ---
+scikit-image              # Contient skimage.io.imread pour lire les images
+matplotlib                # Pour l'affichage des images (plt.figure, plt.imshow, plt.show)

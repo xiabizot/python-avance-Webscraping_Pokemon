@@ -1,0 +1,285 @@
+"""
+DU SORBONNE DATA ANALYTICS
+PYTHON AVANCE
+
+L'exercice présenté ici provient de la plateforme :
+https://pythonds.linogaliana.fr/content/manipulation/04a_webscraping_TP.html#r%C3%A9cup%C3%A9rer-des-informations-sur-les-pokemons
+
+L'objectif est de récupérer les informations sur tous les Pokemons issus du site Internet https://pokemondb.net/, en appliquant la méthode du webscraping.
+Je vais suivre la méthode guidée.
+"""
+
+"""
+AVANT-PROPOS : Ethique et légalité
+
+1. Vérification de la page robots.txt :
+Les conventions et la loi impliquent de bien respecter les règles d'utilisation du webscraping.
+Il faut donc avant tout vérifier la page robots.txt du site.
+Ici, les directives Disallow concernent principalement les robots, les données du Pokédex sont publiques.
+On peut réaliser donc le webscraping selon les règles de l'art.
+
+    Résultats de la page robots.txt :
+
+    User-agent: *
+    Disallow: /pokebase/search?
+    Disallow: /pokebase/revisions
+    Disallow: /pokebase/meta/search?
+    Disallow: /pokebase/meta/revisions
+    Disallow: /pokebase/rmt/search?
+    Disallow: /pokebase/rmt/revisions
+    Crawl-delay: 2 # le crawl delay de 2 secondes sera intégré à l'ensemble de nos requêtes.
+
+    User-agent: Yandex
+    Crawl-delay: 30
+
+    User-agent: SindiceBot
+    Crawl-delay: 30
+
+    User-agent: CCBot
+    Crawl-Delay: 30
+
+    User-agent: wget
+    Disallow: /
+
+    User-agent: WebReaper
+    Disallow: /
+
+    User-agent: AhrefsBot
+    Disallow: /
+
+    Sitemap: https://pokemondb.net/static/sitemaps/pokemondb.xml
+    Sitemap: https://pokemondb.net/static/sitemaps/pokebase.xml
+    Sitemap: https://pokemondb.net/static/sitemaps/images.xml
+
+
+2. User-agent :
+Conformément aux demandes indiquées dans la page robots.txt, on va annoncer en entête "HEADER" notre user-agent, qui ne sera donc pas destiné à un usage commercial.
+
+3. Planification des requêtes :
+Et comme indiqué, il faut prévoir  d'espacer les requêtes toutes les 2 secondes pour ne pas sur-solliciter le site source, ex : ajouter un délai de 2 secondes "time.sleep(2)".
+
+4. Interdictions destinées aux robots : ne nous concernent pas.
+
+5. Le fichier robots.txt nous renseigne sur l'existence de sites miroirs codés en xml.
+Il aurait été intéressant d'utiliser une méthode en attaquant d'abord les sites en xml pour bien cartographier l'arborescence de la base,
+puis de coupler avec les données complètes du site html. Cependant, on suit l'exercice dans sa version guidée.
+"""
+
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+
+##### INSTALLATIONS ET IMPORTS
+### 1-Installation ---
+# !pip install requests
+# !pip install bs4
+# !pip install lxml
+# !pip install pandas
+# !pip install scikit-image
+
+### 2-Imports ---
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import time
+import os
+import shutil
+from skimage.io import imread
+import matplotlib.pyplot as plt
+
+
+##### CONSTANTES
+### 1-URLs
+URL_BASE = "https://pokemondb.net/"
+# On voit en naviguant qu'il n'est pas nécessaire de faire du scraping sur l'ensemble toutes les pages de contenu : le pokedex complet est accessible sur une seule page.
+# La méthodologie prévoit dans tous les cas de procéder par l'étude spécifique d'un seul Pokemon et d'appliquer ensuite cette analyse à l'ensemble du pokedex.
+URL_POKEDEX = f"{URL_BASE}pokedex/all"
+
+
+### 2-CRAWL DELAY
+# Le délai de 2 secondes est tiré du robots.txt (règle éthique).
+CD = CRAWL_DELAY = 2
+
+### 3-HEADER
+# On s'identifie en tant qu'entité non-commerciale (Sorbonne-Data-Analytics) pour réduire le risque d'être bloqué par le serveur + par convention "Mozilla/5.0".
+HEADER = {"User-Agent": "Mozilla/5.0 (compatible; Sorbonne-Data-Analytics/Data Science Project)"}
+
+
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+
+##### METHODOLOGIE
+
+### ETAPE 1 : Les fonctions de base
+
+def get_page_content(url): # Télécharge le contenu HTML de l'url et le rend facile à analyser
+    time.sleep(CD) # CRAWL_DELAY avant la requête
+    print(f"Requête vers {url}")
+    reponse = requests.get(url, headers=HEADER) # la fonction "requests.get" permet de télécharger le contenu html, le HEADER de s'identifier au moment de la requête, le résultat est stocké dans la variable "reponse".
+    return BeautifulSoup(reponse.text, "lxml") # retourne le résultat stocké dans "reponse", en objet soup, grâce au parser "lxml".
+
+def get_name(pokemon_name): # Récupère le contenu d'une page individuelle de Pokemon, en reprenant "get_page_content"
+    url_pokemon = f"{URL_BASE}pokedex/{pokemon_name.lower()}" 
+    return get_page_content(url_pokemon)
+
+# ----------------------------------------------------------------------
+
+### ETAPE 2 : Extraction des données, sur la base de la structure des données de bulbasaur
+
+def extract_pokemon_vitals(soup): # Extrait les données des 4 tableaux "vitals-table" dans un dictionnaire appelé "caracteristiques"
+    caracteristiques = {}
+        
+    caracteristiques["name"] = soup.find("main").find("h1").text.split(" ")[0].lower() # Récupére le nom avec formatage de mise en forme
+
+    vitals_tables = soup.find_all("table", {"class": "vitals-table"}) # Cible tous les tableaux de caractéristiques avec "find_all"
+    
+    for table in vitals_tables: # boucle d'extraction sur chaque ligne (<tr>) pour "row", pour associer l'en-tête (<th>, ex: "Type") à la donnée (<td>.
+        for row in table.find_all("tr"):
+            header = row.find("th").text.strip()
+            data_cell = row.find("td")
+            value = data_cell.text.replace("\n", " ").replace("\xa0", " ").strip()
+                     
+            if header == "Type": # Traitement spécial pour extraire la donnée "Type", car insérée dans des balises de liens cliquables (<a>), ex : <a href=...</a>. Cette donnée peut être double.
+                value = " ".join(a.text for a in data_cell.find_all("a")) # on utilise la fonction "join" pour créer une liste de chaines de caractères + séparateur
+                    
+            caracteristiques[header] = value
+
+    return caracteristiques
+
+def get_pokemon_list(soup_pokedex): # Récupère la liste de tous les noms de Pokemons à partir de la page complète
+    noms = []
+    table_corps = soup_pokedex.find("table", class_="data-table").find("tbody") # Le grand tableau de la liste a la classe "data-table"
+    
+    for link in table_corps.find_all("a", class_="ent-name"): # Il cherche à l'intérieur de cette table tous les liens (<a>) ayant la classe "ent-name" pour récupérer le nom de chaque Pokemon.
+        noms.append(link.text.strip().lower())
+            
+    unique_noms = list(set(noms)) # permet de nettoyer la liste en supprimant les doublons
+    
+    print(f"\nNombre de Pokemons distincts trouvés : {len(unique_noms)}")
+    return unique_noms
+
+# ----------------------------------------------------------------------
+
+### ETAPE 3 : DataFrame
+
+def create_dataframe_for_first_ten(pokemon_names): # Récupère en boucle les infos des 10 premiers Pokemons et les intègre dans un DataFrame
+    all_pokemon_data = []
+    pokemons_to_scrape = pokemon_names[:10]
+    print("\n--- Début du scraping des 10 premiers Pokemons ---")
+    
+    for i, name in enumerate(pokemons_to_scrape): # boucle d'extraction
+        print(f"Processing {i+1}/{len(pokemons_to_scrape)} : {name}...")
+        
+        soup = get_name(name) # appelle "get_name" pour chacun
+        data = extract_pokemon_vitals(soup) # appelle "extract_pokemon_vitals" pour chacun
+        
+        all_pokemon_data.append(data) # ajout la nouvelle extraction en fin de liste
+            
+    # CRÉATION DU DATAFRAME : DOIT ÊTRE HORS DE LA BOUCLE
+    df = pd.DataFrame(all_pokemon_data) 
+    
+    print("\n--- DataFrame des 10 premiers Pokemons (Aperçu) ---")
+    print(df[["National №", "name", "Type", "Height", "Weight", "HP", "Attack", "Speed"]].head(10))
+    # ici on ne veut afficher pour les 10 premiers Pokemons que leurs 8 principales caractéristiques ("National №", "name", "Type", "Height", "Weight", "HP", "Attack", "Speed")
+    # sinon on demande :
+    # print("\n--- Liste complète des colonnes ---")
+    # print(df.columns.tolist())
+    # On peut aussi vérifier les caractéristiques du tableau :
+    # print("\n--- Informations sur le DataFrame (Shape & Types) ---")
+    # df.info()
+
+    return df
+
+# ----------------------------------------------------------------------
+
+### ETAPE 4 : Récupérer et Afficher des Photos
+
+def handle_image_download_and_read(df_pokemon): # Télécharge les images des 5 premiers Pokemons, les sécurise, et les affiche en tableaux NumPy.
+    
+    IMAGE_DIR = "pokemon_images"
+    if not os.path.exists(IMAGE_DIR):
+        os.makedirs(IMAGE_DIR)
+        print(f"\nDossier créé : {IMAGE_DIR}") # "os.makedirs()"" et "os.path.join()"sont utilisés pour créer et organiser le dossier local des images (pokemon_images).
+        
+    noms_top_5 = df_pokemon["name"].head(5).tolist()
+    paths_images = []
+    images_pokemon = {}
+
+    print("\n--- Début du téléchargement des 5 premières images (Sécurisé) ---")
+    
+    for i, name in enumerate(noms_top_5):
+        
+        time.sleep(CD)
+        
+        image_url = f"https://img.pokemondb.net/artwork/{name.lower()}.jpg"
+        local_path = os.path.join(IMAGE_DIR, f"{name.lower()}.jpg")
+        
+        try:
+            # Requête avec un TIMEOUT de 10 secondes et le HEADER => empêche le script de se bloquer / "stream=True" permet de télécharger l'image par petits morceaux
+            response = requests.get(image_url, stream=True, headers=HEADER, timeout=10) 
+            
+            # Vérification du statut de la réponse
+            if response.status_code == 200:
+                with open(local_path, "wb") as file:
+                    shutil.copyfileobj(response.raw, file) # "shutil.copyfileobj(response.raw, file)"" enregistre le code binaire de la requête "(response.raw)"" dans un fichier local "(open(..., 'wb'))"".
+                
+                print(f"Image téléchargée : {name}")
+                paths_images.append(local_path)
+            
+            elif response.status_code == 404:
+                print(f"Erreur 404 : Image non trouvée pour {name}. Ignoré.")
+            else:
+                print(f"Erreur serveur ({response.status_code}) pour {name}. Ignoré.")
+                
+        except requests.exceptions.Timeout:
+            print(f"Timeout : La requête a expiré pour {name}. Ignoré.")
+        except requests.exceptions.RequestException as e:
+            print(f"Erreur de connexion pour {name} : {e}. Ignoré.")
+            
+    # Importation et Affichage des images stockées
+    print("\n--- Lecture et Affichage des images en tableaux NumPy ---")
+    for path in paths_images:
+        
+        img_array = imread(path) # imread(path) du package "skimage.io" lit le fichier image (.jpg) et le convertit en un tableau NumPy (NumPy Array) = les images JPEG sont affichées dans des pop-up calibrés par Numpy.
+        name = os.path.basename(path).replace(".jpg", "") # renomme le fichier d'après le nom du Pokemon + extension en fichier (.jpg)
+        images_pokemon[name] = img_array # stocke l'image en mémoire avec clé sur le nom du Pokemon
+        
+        print(f"'{name}' importé. Dimensions (Shape) : {img_array.shape}")
+
+        # AFFICHAGE DE L'IMAGE (Utilise Matplotlib) => BONUS pour afficher les images en pop up, du tableau NumPy (img_array), en utilisant Matplotlib.
+        plt.figure()
+        plt.imshow(img_array)
+        plt.title(f"Image de {name}")
+        plt.axis("off") # Cache les axes
+        plt.show() 
+        
+    return images_pokemon
+
+
+# ----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+
+##### EXÉCUTION DU CODE
+
+print("\n--- Démarrage du Web Scraping Pokemon (DU SDA) ---")
+
+# 1. Requête initiale pour la page générale du Pokédex (ETAPE 1)
+soup_initial_pokedex = get_page_content(URL_POKEDEX)
+
+# 2. Récupération de la liste des noms (ETAPE 2)
+liste_noms_pokemons = get_pokemon_list(soup_initial_pokedex)
+
+# 3. Bloc de Test et Validation sur Bulbasaur (ETAPE 1 & 2)
+soup_bulbasaur = get_name("bulbasaur")
+bulbasaur_data = extract_pokemon_vitals(soup_bulbasaur)
+print("\n---Dictionnaire de Caractéristiques de Bulbasaur ---")
+print(bulbasaur_data)
+print("---------------------------------------------------------")
+
+# 4. Création du DataFrame pour les 10 premiers (ETAPE 3)
+df_pokedex_10 = create_dataframe_for_first_ten(liste_noms_pokemons)
+
+# 5. Récupération et Affichage des Photos (ETAPE 4)
+if not df_pokedex_10.empty:
+    images_data = handle_image_download_and_read(df_pokedex_10)
+    
+    print("\n--- FIN DE L'EXERCICE ---")
